@@ -1,185 +1,217 @@
+/* ========= helpers ========= */
+const $  = (q) => document.querySelector(q);
+const $c = (t) => document.createElement(t);
 
-const $ = _ => document.querySelector(_)
+/* ========= konfigurasi utama ========= */
+const HEADER_H  = 120;          // ruang header (sinkron dengan CSS)
+let   GRID_N    = 16;           // ukuran peta NxN (ubah sesuka: 12/16/20/24 ...)
+const TILE_W    = 130;          // ukuran grid Kenney
+const TILE_H    = 66;
+const TEX_W     = 12;           // kolom di sprite-sheet
+const TEX_H     = 6;            // baris di sprite-sheet
 
-const $c = _ => document.createElement(_)
+/* ========= kanvas & state ========= */
+let cvsBG, cvsFG, bg, fg, W, H;
+let map = [];                   // menyimpan [rowAtlas, colAtlas]
+let tool = [0,0];               // tool aktif [row,col] di atlas
+let activeTool = null;
+let isPlacing = false;
+let prevState = null;
+let ORIGIN_X = 0, ORIGIN_Y = 0;
 
-let canvas, bg, fg, cf, ntiles, tileWidth, tileHeight, texWidth,
-	texHeight, map, tools, tool, activeTool, isPlacing, previousState
-
-/* texture from https://opengameart.org/content/isometric-landscape */
-const texture = new Image()
+/* ========= load sprite-sheet ========= */
+const texture = new Image();
 texture.src = "assets/01_130x66_130x230.png";
-texture.onload = _ => init()
+texture.onload = () => init();
 
-const init = () => {
+/* ========= init ========= */
+function init(){
+  // siapkan map NxN berisi 0
+  map = Array.from({length: GRID_N}, () =>
+    Array.from({length: GRID_N}, () => [0,0])
+  );
 
-	tool = [0, 0]
+  cvsBG = $("#bg");  cvsFG = $("#fg");
+  bg    = cvsBG.getContext("2d");
+  fg    = cvsFG.getContext("2d");
 
-	map = [
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
-	]
+  // ukuran kanvas dihitung dari besar grid (biar muat)
+  sizeCanvasToFit();
 
-	canvas = $("#bg")
-	canvas.width = 910
-	canvas.height = 666
-	w = 910
-	h = 462
-	texWidth = 12
-	texHeight = 6
-	bg = canvas.getContext("2d")
-	ntiles = 7
-	tileWidth = 128
-	tileHeight = 64
-	bg.translate(w / 2, tileHeight * 2)
+  // event interaksi
+  cvsFG.addEventListener("mousemove", viz);
+  cvsFG.addEventListener("contextmenu", (e)=>e.preventDefault());
+  cvsFG.addEventListener("mousedown", click);
+  cvsFG.addEventListener("mouseup",   () => isPlacing=false);
+  cvsFG.addEventListener("pointerup", () => isPlacing=false);
+  window.addEventListener("resize",   () => { sizeCanvasToFit(); drawMap(); });
 
-	loadHashState(document.location.hash.substring(1))
-	drawMap()
+  // build panel tools
+  buildTools();
 
-	fg = $('#fg')
-	fg.width = canvas.width
-	fg.height = canvas.height
-	cf = fg.getContext('2d')
-	cf.translate(w / 2, tileHeight * 2)
-	fg.addEventListener('mousemove', viz)
-	fg.addEventListener('contextmenu', e => e.preventDefault())
-	fg.addEventListener('mouseup', unclick)
-	fg.addEventListener('mousedown', click)
-	fg.addEventListener('touchend', click)
-	fg.addEventListener('pointerup', click)
-
-	tools = $('#tools')
-
-	let toolCount = 0
-	for (let i = 0; i < texHeight; i++) {
-		for (let j = 0; j < texWidth; j++) {
-			const div = $c('div');
-			div.id = `tool_${toolCount++}`
-			div.style.display = "block"
-			/* width of 132 instead of 130  = 130 image + 2 border = 132 */
-			div.style.backgroundPosition = `-${j * 130 + 2}px -${i * 230}px`
-			div.addEventListener('click', e => {
-				tool = [i, j]
-				if (activeTool)
-					$(`#${activeTool}`).classList.remove('selected')
-				activeTool = e.target.id
-				$(`#${activeTool}`).classList.add('selected')
-			})
-			tools.appendChild(div)
-		}
-	}
-
+  // restore state dari URL jika ada
+  loadHashState(location.hash.slice(1));
+  drawMap();
 }
 
-// From https://stackoverflow.com/a/36046727
-const ToBase64 = u8 => {
-	return btoa(String.fromCharCode.apply(null, u8))
+/* ========= hitung & pusatkan papan ========= */
+function sizeCanvasToFit(){
+  const isoW = (GRID_N + GRID_N) * (TILE_W/2);
+  const isoH = (GRID_N + GRID_N) * (TILE_H/2) + 230; // + tinggi gedung max
+
+  const PAD_W = 420, PAD_H = 320;
+  W = Math.max(innerWidth  + 200, isoW + PAD_W);
+  H = Math.max(innerHeight - HEADER_H + 100, isoH + PAD_H);
+
+  cvsBG.width = cvsFG.width = W;
+  cvsBG.height = cvsFG.height = H;
+
+  // pusatkan papan dan geser di bawah header
+  ORIGIN_X = (W - isoW)/2 + (GRID_N * TILE_W/2);
+  ORIGIN_Y = Math.max(HEADER_H, (H - isoH)/2) + TILE_H;
+
+  bg.setTransform(1,0,0,1,0,0);
+  fg.setTransform(1,0,0,1,0,0);
+  bg.translate(ORIGIN_X, ORIGIN_Y);
+  fg.translate(ORIGIN_X, ORIGIN_Y);
 }
 
-const FromBase64 = str => {
-	return atob(str).split('').map(c => c.charCodeAt(0))
+/* ========= panel tools (ambil dari atlas) ========= */
+function buildTools(){
+  const tools = $("#tools");
+  tools.innerHTML = "";
+  let count = 0;
+  for(let i=0;i<TEX_H;i++){
+    for(let j=0;j<TEX_W;j++){
+      const div = $c("div");
+      div.id = `tool_${count++}`;
+      // 130×230 per slot; +2px offset kecil agar border di PNG kebaca pas
+      div.style.backgroundPosition = `-${j*130 + 2}px -${i*230}px`;
+      div.addEventListener("click", (e)=>{
+        tool = [i, j];
+        if(activeTool) $(`#${activeTool}`).classList.remove("selected");
+        activeTool = e.target.id;
+        $(`#${activeTool}`).classList.add("selected");
+      });
+      tools.appendChild(div);
+    }
+  }
 }
 
-const updateHashState = () => {
-	let c = 0
-	const u8 = new Uint8Array(ntiles * ntiles)
-	for (let i = 0; i < ntiles; i++) {
-		for (let j = 0; j < ntiles; j++) {
-			u8[c++] = map[i][j][0] * texWidth + map[i][j][1]
-		}
-	}
-	const state = ToBase64(u8)
-	if (!previousState || previousState != state) {
-		history.pushState(undefined, undefined, `#${state}`)
-		previousState = state
-	}
+/* ========= gambar satu tile dari atlas ========= */
+function drawAtlasTile(ctx, gridX, gridY, row, col){
+  ctx.save();
+  // konversi grid iso → posisi layar
+  ctx.translate((gridY - gridX) * (TILE_W/2), (gridX + gridY) * (TILE_H/2));
+  const sx = col * 130, sy = row * 230;
+  ctx.drawImage(texture, sx, sy, 130, 230, -65, -130, 130, 230);
+  ctx.restore();
 }
 
-window.addEventListener('popstate', function () {
-	loadHashState(document.location.hash.substring(1))
-	drawMap()
-})
-
-const loadHashState = state => {
-	const u8 = FromBase64(state)
-	let c = 0
-	for (let i = 0; i < ntiles; i++) {
-		for (let j = 0; j < ntiles; j++) {
-			const t = u8[c++] || 0
-			const x = Math.trunc(t / texWidth)
-			const y = Math.trunc(t % texWidth)
-			map[i][j] = [x, y]
-		}
-	}
+/* ========= highlight diamond ========= */
+function drawDiamond(ctx, gx, gy, stroke="rgba(170,255,170,0.18)"){
+  ctx.save();
+  ctx.translate((gy - gx) * (TILE_W/2), (gx + gy) * (TILE_H/2));
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(TILE_W/2, TILE_H/2);
+  ctx.lineTo(0, TILE_H);
+  ctx.lineTo(-TILE_W/2, TILE_H/2);
+  ctx.closePath();
+  ctx.strokeStyle = stroke;
+  ctx.stroke();
+  ctx.restore();
 }
 
-const click = e => {
-	const pos = getPosition(e)
-	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
-		map[pos.x][pos.y][0] = (e.which === 3) ? 0 : tool[0]
-		map[pos.x][pos.y][1] = (e.which === 3) ? 0 : tool[1]
-		isPlacing = true
-		drawMap()
-		cf.clearRect(-w, -h, w * 2, h * 2)
-	}
-	updateHashState();
+/* ========= render peta ========= */
+function drawMap(){
+  bg.clearRect(-ORIGIN_X-2000, -ORIGIN_Y-2000, W+4000, H+4000);
+  for(let i=0;i<GRID_N;i++){
+    for(let j=0;j<GRID_N;j++){
+      // grid overlay tipis (bisa dimatikan nanti via toggle)
+      drawDiamond(bg, i, j);
+      const [r,c] = map[i][j];
+      drawAtlasTile(bg, i, j, r, c);
+    }
+  }
 }
 
-const unclick = () => {
-	if (isPlacing)
-		isPlacing = false
+/* ========= interaksi ========= */
+function click(e){
+  const pos = getGridPosition(e);
+  if(!pos) return;
+  if(e.which === 3) map[pos.x][pos.y] = [0,0];      // klik kanan = "hapus" (tile kosong di atlas)
+  else              map[pos.x][pos.y] = [tool[0], tool[1]];
+  isPlacing = true;
+  drawMap();
+  fg.clearRect(-ORIGIN_X-2000, -ORIGIN_Y-2000, W+4000, H+4000);
+  updateHashState();
 }
 
-const drawMap = () => {
-	bg.clearRect(-w, -h, w * 2, h * 2)
-	for (let i = 0; i < ntiles; i++) {
-		for (let j = 0; j < ntiles; j++) {
-			drawImageTile(bg, i, j, map[i][j][0], map[i][j][1])
-		}
-	}
+function viz(e){
+  if(isPlacing) return click(e);
+  const pos = getGridPosition(e);
+  fg.clearRect(-ORIGIN_X-2000, -ORIGIN_Y-2000, W+4000, H+4000);
+  if(!pos) return;
+  drawDiamond(fg, pos.x, pos.y, "rgba(0,255,180,0.35)");
 }
 
-const drawTile = (c, x, y, color) => {
-	c.save()
-	c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2)
-	c.beginPath()
-	c.moveTo(0, 0)
-	c.lineTo(tileWidth / 2, tileHeight / 2)
-	c.lineTo(0, tileHeight)
-	c.lineTo(-tileWidth / 2, tileHeight / 2)
-	c.closePath()
-	c.fillStyle = color
-	c.fill()
-	c.restore()
+/* ========= konversi koordinat layar → grid iso ========= */
+function getGridPosition(e){
+  const offX = e.offsetX - ORIGIN_X;
+  const offY = e.offsetY - ORIGIN_Y;
+  const _y = offY / TILE_H;
+  const _x = offX / TILE_W - GRID_N/2;
+  const gx = Math.floor(_y - _x);
+  const gy = Math.floor(_x + _y);
+  if(gx<0 || gy<0 || gx>=GRID_N || gy>=GRID_N) return null;
+  return { x: gx, y: gy };
 }
 
-const drawImageTile = (c, x, y, i, j) => {
-	c.save()
-	c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2)
-	j *= 130
-	i *= 230
-	c.drawImage(texture, j, i, 130, 230, -65, -130, 130, 230)
-	c.restore()
+/* ========= save/load state via URL hash ========= */
+function toB64(u8){ return btoa(String.fromCharCode.apply(null, u8)); }
+function fromB64(s){ return atob(s).split("").map(c=>c.charCodeAt(0)); }
+
+function updateHashState(){
+  let c = 0;
+  const u8 = new Uint8Array(GRID_N*GRID_N);
+  for(let i=0;i<GRID_N;i++){
+    for(let j=0;j<GRID_N;j++){
+      const [r,col] = map[i][j];
+      u8[c++] = r*TEX_W + col;
+    }
+  }
+  const state = toB64(u8);
+  if(prevState !== state){
+    history.replaceState(null, "", `#${state}`);
+    prevState = state;
+  }
 }
 
-const getPosition = e => {
-	const _y = (e.offsetY - tileHeight * 2) / tileHeight
-	const _x = e.offsetX / tileWidth - ntiles / 2
-	x = Math.floor(_y - _x)
-	y = Math.floor(_x + _y)
-	return { x, y }
+function loadHashState(hash){
+  if(!hash) return;
+  const u8 = fromB64(hash);
+  let c = 0;
+  for(let i=0;i<GRID_N;i++){
+    for(let j=0;j<GRID_N;j++){
+      const t = u8[c++] ?? 0;
+      const r = Math.trunc(t / TEX_W);
+      const col = t % TEX_W;
+      map[i][j] = [r, col];
+    }
+  }
 }
 
-const viz = (e) => {
-	if (isPlacing)
-		click(e)
-	const pos = getPosition(e)
-	cf.clearRect(-w, -h, w * 2, h * 2)
-	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles)
-		drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.2)')
-}
+window.addEventListener("popstate", () => {
+  loadHashState(location.hash.slice(1));
+  drawMap();
+});
+
+/* ========= shortcut kecil ========= */
+window.addEventListener("keydown", (e)=>{
+  if(e.key.toLowerCase()==="g"){
+    // toggle grid overlay: cukup redraw dengan/ tanpa stroke
+    // sederhana: ubah opacity via CSS var (disini kita pakai flag cepat)
+    SHOW_GRID = !SHOW_GRID;
+  }
+});
