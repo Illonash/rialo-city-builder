@@ -1,6 +1,11 @@
 /* ========= helpers ========= */
 const $  = (q) => document.querySelector(q);
 const $c = (t) => document.createElement(t);
+-let SHOW_GRID = true;
++let SHOW_GRID = true;
++SCALE = 1.0;
++PAN_X = 0;
++PAN_Y = 0;
 
 /* ========= konfigurasi utama ========= */
 const HEADER_H  = 120;        // ruang header
@@ -111,23 +116,17 @@ function buildTools(){
     for(let j=0;j<TEX_W;j++){
       const div = $c("div");
       div.id = `tool_${count++}`;
-      div.style.backgroundImage  = "url('../assets/01_130x66_130x230.png')";
+-     div.style.backgroundImage  = "url('../assets/01_130x66_130x230.png')";
++     // IMPORTANT: inline style URL relatif ke index.html, jadi tanpa "../"
++     div.style.backgroundImage  = "url('assets/01_130x66_130x230.png')";
       div.style.backgroundRepeat = "no-repeat";
       div.style.backgroundPosition = `-${j*130 + 2}px -${i*230}px`;
       div.style.width  = "130px";
       div.style.height = "230px";
       div.style.border = "2px dashed transparent";
       div.style.borderRadius = "10px";
-      div.addEventListener("click", (e)=>{
-        tool = [i, j];
-        if(activeTool) $(`#${activeTool}`).classList.remove("selected");
-        activeTool = e.target.id;
-        $(`#${activeTool}`).classList.add("selected");
-      });
-      tools.appendChild(div);
-    }
-  }
-}
+      ...
+
 
 /* ========= gambar ========= */
 function drawAtlasTile(ctx, gx, gy, row, col){
@@ -302,4 +301,13 @@ function loadHashState(hash){
 window.addEventListener("popstate", ()=>{
   loadHashState(location.hash.slice(1));
   drawMap();
+});
+
+window.addEventListener("keydown", (e)=>{
+  if(e.key.toLowerCase()==="g"){ SHOW_GRID = !SHOW_GRID; drawMap(); }
+  if(e.code==="Space"){ document.body.classList.add("pan-mode"); }
++ if(e.key.toLowerCase()==="r"){ // R = reset view
++   SCALE = 1.0; PAN_X = 0; PAN_Y = 0;
++   applyTransform(); drawMap();
++ }
 });
