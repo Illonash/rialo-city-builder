@@ -1,49 +1,93 @@
-:root{
-  --bg:#0f1520;
-  --panel:#0b1220;
-  --ink:#e7eefc;
-  --muted:#9fb3d9;
-  --accent:#b05355;
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
 }
 
-*{box-sizing:border-box}
-html,body{height:100%;margin:0}
-body{background:#0b0f16;color:var(--ink);font:14px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
-
-.topbar{
-  position:sticky;top:0;z-index:5;
-  display:flex;justify-content:space-between;align-items:center;
-  padding:10px 14px;background:var(--bg);border-bottom:1px solid #1b2436
+canvas {
+  display: block;
+  position: absolute;
 }
-.topbar .title{font-weight:700}
-.topbar .hint{color:var(--muted);font-size:12px}
 
-.wrap{display:flex;height:calc(100vh - 44px);overflow:hidden}
-
-/* ----- TOOLS (kiri) ----- */
-.tools{
-  width:360px;min-width:260px;max-width:420px;
-  overflow:auto;background:var(--panel);padding:16px 12px;gap:12px;
-  display:flex;flex-wrap:wrap;align-content:flex-start
+#main {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-around;
+	height: 100%;
 }
-.tools .tool{
-  flex:0 0 130px;          /* jaga kotak 130px */
-  width:130px;height:230px;
-  background-repeat:no-repeat;
-  background-size:130px 230px; /* WAJIB: biar ga mengecil */
-  border:2px dashed transparent;border-radius:8px;cursor:pointer
-}
-.tools .tool.atlas{
-  background-image:url("../assets/01_130x66_130x230.png");
-}
-.tools .tool.selected{border-color:var(--accent)}
 
-/* ----- STAGE (kanan) ----- */
-.stage{position:relative;flex:1;overflow:auto;background:#fff}
-canvas{position:absolute;left:0;top:0;display:block}
+#area {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	flex: 1;
+	display: flex;
+	justify-content: space-around;
+	overflow: auto;
+}
 
-/* gambar lebih tajam */
-canvas, .tools .tool{
-  image-rendering: -moz-crisp-edges;
-  image-rendering: pixelated;
+#tools {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	overflow: auto;
+	width: 580px;
+	height: 100%;
+	transition: width .8s;
+}
+@media only screen and (max-width: 1700px) {
+	#tools {
+		width: 440px;
+	}
+}
+
+@media only screen and (max-width: 1540px) {
+	#tools {
+		width: 300px;
+	}
+}
+@media only screen and (max-width: 1380px) {
+	#tools {
+		width: 160px;
+	}
+}
+
+#tools > div {
+	display: block;
+	background-image: url('../assets/01_130x66_130x230.png');
+	background-repeat: no-repeat;
+	background-size: auto;
+	width: 130px;
+	height: 230px;
+	border: 2px dashed transparent;
+	box-sizing: border-box;
+}
+
+#tools > div.selected {
+	border-color: #b05355;
+}
+
+@media only screen and (max-width: 966px) {
+
+	#main {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	
+	#tools {
+		display: flex;
+		align-items: center;
+		overflow: auto;
+		width: 100%;
+		height: 240px;
+	}
+	#area {
+		justify-content: flex-start;
+	}
+	
 }
