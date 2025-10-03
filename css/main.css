@@ -20,22 +20,30 @@ body{background:#0b0f16;color:var(--ink);font:14px/1.4 ui-sans-serif,system-ui,S
 
 .wrap{display:flex;height:calc(100vh - 44px);overflow:hidden}
 
+/* ----- TOOLS (kiri) ----- */
 .tools{
   width:360px;min-width:260px;max-width:420px;
   overflow:auto;background:var(--panel);padding:16px 12px;gap:12px;
   display:flex;flex-wrap:wrap;align-content:flex-start
 }
 .tools .tool{
-  width:130px;height:230px;background-repeat:no-repeat;background-size:130px 230px;
+  flex:0 0 130px;          /* jaga kotak 130px */
+  width:130px;height:230px;
+  background-repeat:no-repeat;
+  background-size:130px 230px; /* WAJIB: biar ga mengecil */
   border:2px dashed transparent;border-radius:8px;cursor:pointer
 }
 .tools .tool.atlas{
-  background-image:url("../assets/01_130x66_130x230.png")
+  background-image:url("../assets/01_130x66_130x230.png");
 }
 .tools .tool.selected{border-color:var(--accent)}
 
+/* ----- STAGE (kanan) ----- */
 .stage{position:relative;flex:1;overflow:auto;background:#fff}
 canvas{position:absolute;left:0;top:0;display:block}
 
-/* small helpers */
-.badge{display:inline-block;padding:3px 6px;border-radius:6px;background:#162034;color:#b9c7e8;font-size:12px}
+/* gambar lebih tajam */
+canvas, .tools .tool{
+  image-rendering: -moz-crisp-edges;
+  image-rendering: pixelated;
+}
