@@ -6,42 +6,36 @@
   <meta name="theme-color" content="#0f172a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="description" content="Rialo City Builder — a tiny isometric city builder prototype." />
-
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://<username>.github.io/rialo-city-builder/" />
-  <meta property="og:title" content="Rialo City Builder" />
-  <meta property="og:description" content="Build a tiny isometric city on a 130×66 grid." />
-  <meta property="og:image" content="screenshot.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Rialo City Builder" />
-  <meta name="twitter:description" content="Build a tiny isometric city on a 130×66 grid." />
-  <meta name="twitter:image" content="screenshot.png" />
-
+  <title>Rialo City Builder</title>
   <link rel="icon" href="favicon.png" sizes="256x256" />
   <link rel="apple-touch-icon" href="favicon.png" />
-  <title>Rialo City Builder</title>
   <link rel="stylesheet" href="css/main.css" />
 </head>
 <body>
+  <section id="topbar">
+    <div class="left">
+      <strong>Rialo City Builder</strong>
+    </div>
+    <div class="right">
+      <label class="mode">
+        Palette:
+        <select id="palette">
+          <option value="tiles">Tiles</option>
+          <option value="cars">Vehicles</option>
+        </select>
+      </label>
+      <button id="btnClear">Clear</button>
+      <span class="hint">Scroll = zoom · Drag = pan · Right-click = erase · G = toggle grid</span>
+    </div>
+  </section>
+
   <section id="main">
-    <div id="tools"></div>
+    <aside id="tools"></aside>
     <div id="area">
       <canvas id="bg"></canvas>
       <canvas id="fg"></canvas>
     </div>
   </section>
-
-  <!-- Toolbar -->
-  <div id="toolbar">
-    <button id="zoomOutBtn" title="Zoom Out">−</button>
-    <span class="sep"></span>
-    <button id="zoomInBtn" title="Zoom In">+</button>
-    <span class="sep"></span>
-    <button id="clearBtn" title="Clear All">Clear</button>
-  </div>
 
   <script src="js/main.js"></script>
 </body>
