@@ -9,8 +9,11 @@ let map, tools, tool, activeTool, isPlacing, previousState;
 // ====== konfigurasi papan ======
 const HEADER_SHIFT = 120;     // ruang kosong di atas untuk judul
 let   GRID_N       = 16;      // ukuran papan NxN (ubah bebas: 12/16/20)
-const TILE_W       = 128;
-const TILE_H       = 64;
+-const TILE_W    = 128;
+-const TILE_H    = 64;
++const TILE_W    = 130;   // match atlas Kenney (basis belah-ketupat)
++const TILE_H    = 66;    // match atlas Kenney
+
 
 // ====== zoom / transform ======
 let SCALE = 1.0;              // 0.6–2.0
@@ -205,16 +208,27 @@ const viz = (e) => {
 };
 
 // ====== konversi posisi cursor → grid ======
-const getPosition = (e) => {
-  // sesuaikan dengan SCALE & translate yang dipakai
-  const ox = e.offsetX / SCALE;
-  const oy = e.offsetY / SCALE;
-  const _y = (oy - (HEADER_SHIFT + tileHeight * 2)) / tileHeight;
-  const _x = ox / tileWidth - ntiles / 2;
-  const x = Math.floor(_y - _x);
-  const y = Math.floor(_x + _y);
-  return { x, y };
-};
+function getGridPosition(e){
+  // posisi pointer relatif ke canvas dalam pixel kanvas sebenarnya
+  const rect = cvsFG.getBoundingClientRect();
+  const pxRatioX = cvsFG.width  / rect.width;
+  const pxRatioY = cvsFG.height / rect.height;
+  const mx = (e.clientX - rect.left) * pxRatioX;
+  const my = (e.clientY - rect.top)  * pxRatioY;
+
+  // balikkan transform (scale + translate)
+  const ox = (mx / SCALE) - (ORIGIN_X + PAN_X);
+  const oy = (my / SCALE) - (ORIGIN_Y + PAN_Y);
+
+  // rumus iso
+  const _y = oy / TILE_H;
+  const _x = ox / TILE_W - GRID_N/2;
+
+  const gx = Math.floor(_y - _x);
+  const gy = Math.floor(_x + _y);
+  if(gx<0 || gy<0 || gx>=GRID_N || gy>=GRID_N) return null;
+  return { x: gx, y: gy };
+}
 
 // ====== clear all ======
 function clearAll() {
@@ -226,3 +240,9 @@ function clearAll() {
   drawMap();
   updateHashState();
 }
+
+window.addEventListener("keydown", (e)=>{
+  if(e.key.toLowerCase()==="g"){ SHOW_GRID = !SHOW_GRID; drawMap(); }
+  if(e.code==="Space"){ document.body.classList.add("pan-mode"); }
+  if(e.key.toLowerCase()==="r"){ SCALE=1; PAN_X=0; PAN_Y=0; applyTransform(); drawMap(); }
+});
