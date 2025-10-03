@@ -1,184 +1,292 @@
-const $ = _ => document.querySelector(_)
+/* =========================================================
+   Rialo City Builder — Minimal sandbox with:
+   - Kenney atlas (01_130x66_130x230.png)
+   - One custom image asset: assets/hotelnew.png
+   Click = place, Right-click = erase, G = toggle grid
+   ========================================================= */
 
-const $c = _ => document.createElement(_)
+const $ = sel => document.querySelector(sel);
+const mk = tag => document.createElement(tag);
 
-let canvas, bg, fg, cf, ntiles, tileWidth, tileHeight, texWidth,
-	texHeight, map, tools, tool, activeTool, isPlacing, previousState
+// --- CANVAS & GRID SETTINGS
+const GRID_N = 12;             // jumlah sel tiap sisi (bisa 12~20)
+const TILE_W = 130;            // lebar tile iso (px)
+const TILE_H = 66;             // tinggi tile iso (px)
+const VIEW_W = 1800;           // ukuran awal kanvas
+const VIEW_H = 1200;
+const ORIGIN_Y_TILES = 3.2;    // geser peta turun (dalam satuan tinggi tile)
 
-/* texture from https://opengameart.org/content/isometric-landscape */
-const texture = new Image()
-texture.src = "assets/01_130x66_130x230.png"
-texture.onload = _ => init()
+// --- ATLAS SETTINGS (Kenney sheet)
+const ATLAS_COLS = 12;
+const ATLAS_ROWS = 6;
+const SPRITE_W = 130;
+const SPRITE_H = 230;
 
-const init = () => {
+// --- IMAGES
+const atlasImg = new Image();
+atlasImg.src = "assets/01_130x66_130x230.png";
 
-	tool = [0, 0]
+const hotelImg = new Image();
+hotelImg.src = "assets/hotelnew.png"; // 130x230 png transparan
 
-	map = [
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
-	]
+// --- STATE
+let canvasBG, canvasFG, ctxBG, ctxFG;
+let placing = false;
+let showGrid = true;
+let activeEl = null;
+let camera = { x: 0, y: 0, scale: 1 };
 
-	canvas = $("#bg")
-	canvas.width = 910
-	canvas.height = 666
-	w = 910
-	h = 462
-	texWidth = 12
-	texHeight = 6
-	bg = canvas.getContext("2d")
-	ntiles = 7
-	tileWidth = 128
-	tileHeight = 64
-	bg.translate(w / 2, tileHeight * 2)
+// tool object: { kind:'atlas', i, j } or { kind:'image', img }
+let tool = { kind: 'atlas', i: 0, j: 0 };
 
-	loadHashState(document.location.hash.substring(1))
-	drawMap()
+// map cell object: same shape as tool
+let map = Array.from({ length: GRID_N }, () =>
+  Array.from({ length: GRID_N }, () => ({ kind: 'atlas', i: 0, j: 0 }))
+);
 
-	fg = $('#fg')
-	fg.width = canvas.width
-	fg.height = canvas.height
-	cf = fg.getContext('2d')
-	cf.translate(w / 2, tileHeight * 2)
-	fg.addEventListener('mousemove', viz)
-	fg.addEventListener('contextmenu', e => e.preventDefault())
-	fg.addEventListener('mouseup', unclick)
-	fg.addEventListener('mousedown', click)
-	fg.addEventListener('touchend', click)
-	fg.addEventListener('pointerup', click)
+// --- INIT
+window.addEventListener("load", () => {
+  setupCanvases();
+  buildToolsPanel();
+  attachStageEvents();
+  draw();
+});
 
-	tools = $('#tools')
+// ---------------------------------------------------------
+// CANVAS SETUP
+function setupCanvases() {
+  const stage = $("#stage");
+  canvasBG = $("#bg");
+  canvasFG = $("#fg");
 
-	let toolCount = 0
-	for (let i = 0; i < texHeight; i++) {
-		for (let j = 0; j < texWidth; j++) {
-			const div = $c('div');
-			div.id = `tool_${toolCount++}`
-			div.style.display = "block"
-			/* width of 132 instead of 130  = 130 image + 2 border = 132 */
-			div.style.backgroundPosition = `-${j * 130 + 2}px -${i * 230}px`
-			div.addEventListener('click', e => {
-				tool = [i, j]
-				if (activeTool)
-					$(`#${activeTool}`).classList.remove('selected')
-				activeTool = e.target.id
-				$(`#${activeTool}`).classList.add('selected')
-			})
-			tools.appendChild(div)
-		}
-	}
+  canvasBG.width = VIEW_W;
+  canvasBG.height = VIEW_H;
+  canvasFG.width = VIEW_W;
+  canvasFG.height = VIEW_H;
 
+  ctxBG = canvasBG.getContext("2d");
+  ctxFG = canvasFG.getContext("2d");
+
+  // tempatkan origin di tengah horizontal, dan geser ke bawah sedikit
+  ctxBG.setTransform(1,0,0,1,0,0);
+  ctxBG.translate(VIEW_W/2, TILE_H * ORIGIN_Y_TILES);
+  ctxFG.setTransform(1,0,0,1,0,0);
+  ctxFG.translate(VIEW_W/2, TILE_H * ORIGIN_Y_TILES);
+
+  canvasFG.oncontextmenu = e => e.preventDefault(); // disable menu right-click
 }
 
-// From https://stackoverflow.com/a/36046727
-const ToBase64 = u8 => {
-	return btoa(String.fromCharCode.apply(null, u8))
+// ---------------------------------------------------------
+// TOOLS PANEL
+function buildToolsPanel() {
+  const tools = $("#tools");
+
+  // Generate beberapa contoh tombol dari atlas Kenney (baris 0, kolom 0..8)
+  // Kamu bisa tambah/ubah indeks sesuai kebutuhan
+  const picks = [
+    { i:0, j:0 }, { i:0, j:1 }, { i:0, j:2 }, { i:0, j:3 },
+    { i:1, j:0 }, { i:1, j:1 }, { i:1, j:2 }, { i:1, j:3 },
+    { i:2, j:0 }, { i:2, j:1 }, { i:2, j:2 }, { i:3, j:0 }
+  ];
+
+  picks.forEach((p, idx) => {
+    const t = mk("div");
+    t.className = "tool atlas";
+    t.style.backgroundPosition = `-${p.j*SPRITE_W}px -${p.i*SPRITE_H}px`;
+    t.title = `Atlas ${p.i},${p.j}`;
+    t.addEventListener("click", () => {
+      selectTool(t);
+      tool = { kind: 'atlas', i: p.i, j: p.j };
+    });
+    if (idx === 0) { selectTool(t); } // default selected
+    tools.appendChild(t);
+  });
+
+  // Tambahkan tombol untuk aset custom: hotelnew.png
+  const custom = mk("div");
+  custom.className = "tool";
+  custom.style.backgroundImage = "url('assets/hotelnew.png')";
+  custom.style.backgroundSize = "130px 230px";
+  custom.title = "Rialo Hotel (custom)";
+  custom.addEventListener("click", () => {
+    selectTool(custom);
+    tool = { kind: 'image', img: hotelImg };
+  });
+  tools.appendChild(custom);
 }
 
-const FromBase64 = str => {
-	return atob(str).split('').map(c => c.charCodeAt(0))
+function selectTool(el) {
+  if (activeEl) activeEl.classList.remove("selected");
+  activeEl = el;
+  el.classList.add("selected");
 }
 
-const updateHashState = () => {
-	let c = 0
-	const u8 = new Uint8Array(ntiles * ntiles)
-	for (let i = 0; i < ntiles; i++) {
-		for (let j = 0; j < ntiles; j++) {
-			u8[c++] = map[i][j][0] * texWidth + map[i][j][1]
-		}
-	}
-	const state = ToBase64(u8)
-	if (!previousState || previousState != state) {
-		history.pushState(undefined, undefined, `#${state}`)
-		previousState = state
-	}
+// ---------------------------------------------------------
+// EVENTS (place, erase, pan, zoom, grid toggle)
+function attachStageEvents() {
+  canvasFG.addEventListener("mousedown", onMouseDown);
+  window.addEventListener("mouseup", () => (placing = false));
+  canvasFG.addEventListener("mousemove", onMouseMove);
+  canvasFG.addEventListener("wheel", onWheel, { passive: false });
+  window.addEventListener("keydown", e => {
+    if (e.key.toLowerCase() === "g") {
+      showGrid = !showGrid; draw();
+    }
+  });
+
+  // simple drag to pan
+  let dragging = false, last = {x:0,y:0};
+  canvasFG.addEventListener("mousedown", e => {
+    if (e.button === 1) { // middle button for pan
+      dragging = true; last = {x:e.clientX,y:e.clientY}; e.preventDefault();
+    }
+  });
+  window.addEventListener("mousemove", e => {
+    if (!dragging) return;
+    const dx = (e.clientX - last.x);
+    const dy = (e.clientY - last.y);
+    last = {x:e.clientX,y:e.clientY};
+    camera.x += dx;
+    camera.y += dy;
+    applyCamera();
+    draw();
+  });
+  window.addEventListener("mouseup", () => dragging = false);
 }
 
-window.addEventListener('popstate', function () {
-	loadHashState(document.location.hash.substring(1))
-	drawMap()
-})
+function onMouseDown(e) {
+  if (e.button === 1) return; // middle = pan only
+  const cell = screenToGrid(e.offsetX, e.offsetY);
+  if (!cell) return;
+  const {x,y} = cell;
 
-const loadHashState = state => {
-	const u8 = FromBase64(state)
-	let c = 0
-	for (let i = 0; i < ntiles; i++) {
-		for (let j = 0; j < ntiles; j++) {
-			const t = u8[c++] || 0
-			const x = Math.trunc(t / texWidth)
-			const y = Math.trunc(t % texWidth)
-			map[i][j] = [x, y]
-		}
-	}
+  if (e.button === 2) {
+    // erase → set atlas(0,0)
+    map[x][y] = { kind:'atlas', i:0, j:0 };
+  } else {
+    // place current tool
+    map[x][y] = (tool.kind === 'image')
+      ? { kind:'image', img: tool.img }
+      : { kind:'atlas', i: tool.i, j: tool.j };
+  }
+  placing = true;
+  draw();
 }
 
-const click = e => {
-	const pos = getPosition(e)
-	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
-		map[pos.x][pos.y][0] = (e.which === 3) ? 0 : tool[0]
-		map[pos.x][pos.y][1] = (e.which === 3) ? 0 : tool[1]
-		isPlacing = true
-		drawMap()
-		cf.clearRect(-w, -h, w * 2, h * 2)
-	}
-	updateHashState();
+function onMouseMove(e) {
+  if (placing && e.buttons & 1) { // keep placing while dragging left
+    onMouseDown(e);
+  }
+  drawHover(e.offsetX, e.offsetY);
 }
 
-const unclick = () => {
-	if (isPlacing)
-		isPlacing = false
+function onWheel(e) {
+  e.preventDefault();
+  const delta = Math.sign(e.deltaY);
+  let s = camera.scale;
+  s *= (delta > 0 ? 0.9 : 1.1);
+  s = Math.max(0.4, Math.min(2.2, s));
+  camera.scale = s;
+  applyCamera();
+  draw();
 }
 
-const drawMap = () => {
-	bg.clearRect(-w, -h, w * 2, h * 2)
-	for (let i = 0; i < ntiles; i++) {
-		for (let j = 0; j < ntiles; j++) {
-			drawImageTile(bg, i, j, map[i][j][0], map[i][j][1])
-		}
-	}
+function applyCamera() {
+  // reset transforms, reapply origin & camera
+  ctxBG.setTransform(1,0,0,1,0,0);
+  ctxBG.translate(VIEW_W/2 + camera.x, TILE_H*ORIGIN_Y_TILES + camera.y);
+  ctxBG.scale(camera.scale, camera.scale);
+
+  ctxFG.setTransform(1,0,0,1,0,0);
+  ctxFG.translate(VIEW_W/2 + camera.x, TILE_H*ORIGIN_Y_TILES + camera.y);
+  ctxFG.scale(camera.scale, camera.scale);
 }
 
-const drawTile = (c, x, y, color) => {
-	c.save()
-	c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2)
-	c.beginPath()
-	c.moveTo(0, 0)
-	c.lineTo(tileWidth / 2, tileHeight / 2)
-	c.lineTo(0, tileHeight)
-	c.lineTo(-tileWidth / 2, tileHeight / 2)
-	c.closePath()
-	c.fillStyle = color
-	c.fill()
-	c.restore()
+// ---------------------------------------------------------
+// RENDER
+function draw() {
+  // clear both
+  ctxBG.clearRect(-5000,-5000,10000,10000);
+
+  // map
+  for (let i=0;i<GRID_N;i++){
+    for (let j=0;j<GRID_N;j++){
+      drawCell(i,j,map[i][j]);
+    }
+  }
+
+  // grid overlay
+  if (showGrid) drawGrid();
 }
 
-const drawImageTile = (c, x, y, i, j) => {
-	c.save()
-	c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2)
-	j *= 130
-	i *= 230
-	c.drawImage(texture, j, i, 130, 230, -65, -130, 130, 230)
-	c.restore()
+function drawCell(i, j, cell) {
+  ctxBG.save();
+  ctxBG.translate((j - i) * (TILE_W/2), (i + j) * (TILE_H/2));
+
+  if (cell.kind === 'image' && cell.img && cell.img.complete) {
+    ctxBG.drawImage(cell.img, -SPRITE_W/2, -SPRITE_H + TILE_H, SPRITE_W, SPRITE_H);
+  } else {
+    const sx = (cell.j||0) * SPRITE_W;
+    const sy = (cell.i||0) * SPRITE_H;
+    ctxBG.drawImage(atlasImg, sx, sy, SPRITE_W, SPRITE_H, -SPRITE_W/2, -SPRITE_H + TILE_H, SPRITE_W, SPRITE_H);
+  }
+  ctxBG.restore();
 }
 
-const getPosition = e => {
-	const _y = (e.offsetY - tileHeight * 2) / tileHeight
-	const _x = e.offsetX / tileWidth - ntiles / 2
-	x = Math.floor(_y - _x)
-	y = Math.floor(_x + _y)
-	return { x, y }
+function drawGrid() {
+  ctxBG.save();
+  ctxBG.strokeStyle = "rgba(0,0,0,.12)";
+  ctxBG.lineWidth = 1;
+  for (let i=0;i<GRID_N;i++){
+    for (let j=0;j<GRID_N;j++){
+      ctxBG.save();
+      ctxBG.translate((j - i) * (TILE_W/2), (i + j) * (TILE_H/2));
+      diamondPath(ctxBG);
+      ctxBG.stroke();
+      ctxBG.restore();
+    }
+  }
+  ctxBG.restore();
 }
 
-const viz = (e) => {
-	if (isPlacing)
-		click(e)
-	const pos = getPosition(e)
-	cf.clearRect(-w, -h, w * 2, h * 2)
-	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles)
-		drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.2)')
+function diamondPath(c){
+  c.beginPath();
+  c.moveTo(0, 0);
+  c.lineTo(TILE_W/2, TILE_H/2);
+  c.lineTo(0, TILE_H);
+  c.lineTo(-TILE_W/2, TILE_H/2);
+  c.closePath();
+}
+
+// hover highlight only
+function drawHover(px, py){
+  ctxFG.clearRect(-5000,-5000,10000,10000);
+  const cell = screenToGrid(px, py);
+  if (!cell) return;
+  const {x,y} = cell;
+
+  ctxFG.save();
+  ctxFG.translate((y - x) * (TILE_W/2), (x + y) * (TILE_H/2));
+  ctxFG.fillStyle = "rgba(0,160,255,.18)";
+  diamondPath(ctxFG);
+  ctxFG.fill();
+  ctxFG.restore();
+}
+
+// ---------------------------------------------------------
+// COORD CONVERSIONS
+function screenToGrid(px, py){
+  // balik transform: dari screen ke world lalu ke grid
+  // kompensasi camera & origin yang sudah diterapkan ke context
+  const worldX = (px - (VIEW_W/2 + camera.x)) / camera.scale;
+  const worldY = (py - (TILE_H*ORIGIN_Y_TILES + camera.y)) / camera.scale;
+
+  // inverse iso transform
+  const _y = worldY / (TILE_H/2);
+  const _x = worldX / (TILE_W/2);
+  const gx = Math.floor((_y - _x)/2);
+  const gy = Math.floor((_y + _x)/2);
+
+  if (gx<0 || gx>=GRID_N || gy<0 || gy>=GRID_N) return null;
+  return { x: gx, y: gy };
 }
