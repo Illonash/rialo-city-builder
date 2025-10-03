@@ -1,93 +1,184 @@
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
+const $ = _ => document.querySelector(_)
+
+const $c = _ => document.createElement(_)
+
+let canvas, bg, fg, cf, ntiles, tileWidth, tileHeight, texWidth,
+	texHeight, map, tools, tool, activeTool, isPlacing, previousState
+
+/* texture from https://opengameart.org/content/isometric-landscape */
+const texture = new Image()
+texture.src = "assets/01_130x66_130x230.png"
+texture.onload = _ => init()
+
+const init = () => {
+
+	tool = [0, 0]
+
+	map = [
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
+	]
+
+	canvas = $("#bg")
+	canvas.width = 910
+	canvas.height = 666
+	w = 910
+	h = 462
+	texWidth = 12
+	texHeight = 6
+	bg = canvas.getContext("2d")
+	ntiles = 7
+	tileWidth = 128
+	tileHeight = 64
+	bg.translate(w / 2, tileHeight * 2)
+
+	loadHashState(document.location.hash.substring(1))
+	drawMap()
+
+	fg = $('#fg')
+	fg.width = canvas.width
+	fg.height = canvas.height
+	cf = fg.getContext('2d')
+	cf.translate(w / 2, tileHeight * 2)
+	fg.addEventListener('mousemove', viz)
+	fg.addEventListener('contextmenu', e => e.preventDefault())
+	fg.addEventListener('mouseup', unclick)
+	fg.addEventListener('mousedown', click)
+	fg.addEventListener('touchend', click)
+	fg.addEventListener('pointerup', click)
+
+	tools = $('#tools')
+
+	let toolCount = 0
+	for (let i = 0; i < texHeight; i++) {
+		for (let j = 0; j < texWidth; j++) {
+			const div = $c('div');
+			div.id = `tool_${toolCount++}`
+			div.style.display = "block"
+			/* width of 132 instead of 130  = 130 image + 2 border = 132 */
+			div.style.backgroundPosition = `-${j * 130 + 2}px -${i * 230}px`
+			div.addEventListener('click', e => {
+				tool = [i, j]
+				if (activeTool)
+					$(`#${activeTool}`).classList.remove('selected')
+				activeTool = e.target.id
+				$(`#${activeTool}`).classList.add('selected')
+			})
+			tools.appendChild(div)
+		}
+	}
+
 }
 
-canvas {
-  display: block;
-  position: absolute;
+// From https://stackoverflow.com/a/36046727
+const ToBase64 = u8 => {
+	return btoa(String.fromCharCode.apply(null, u8))
 }
 
-#main {
-	position: relative;
-	display: flex;
-	align-items: center;
-	justify-content: space-around;
-	height: 100%;
+const FromBase64 = str => {
+	return atob(str).split('').map(c => c.charCodeAt(0))
 }
 
-#area {
-	position: relative;
-	width: 100%;
-	height: 100%;
-	flex: 1;
-	display: flex;
-	justify-content: space-around;
-	overflow: auto;
-}
-
-#tools {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
-	flex-wrap: wrap;
-	overflow: auto;
-	width: 580px;
-	height: 100%;
-	transition: width .8s;
-}
-@media only screen and (max-width: 1700px) {
-	#tools {
-		width: 440px;
+const updateHashState = () => {
+	let c = 0
+	const u8 = new Uint8Array(ntiles * ntiles)
+	for (let i = 0; i < ntiles; i++) {
+		for (let j = 0; j < ntiles; j++) {
+			u8[c++] = map[i][j][0] * texWidth + map[i][j][1]
+		}
+	}
+	const state = ToBase64(u8)
+	if (!previousState || previousState != state) {
+		history.pushState(undefined, undefined, `#${state}`)
+		previousState = state
 	}
 }
 
-@media only screen and (max-width: 1540px) {
-	#tools {
-		width: 300px;
+window.addEventListener('popstate', function () {
+	loadHashState(document.location.hash.substring(1))
+	drawMap()
+})
+
+const loadHashState = state => {
+	const u8 = FromBase64(state)
+	let c = 0
+	for (let i = 0; i < ntiles; i++) {
+		for (let j = 0; j < ntiles; j++) {
+			const t = u8[c++] || 0
+			const x = Math.trunc(t / texWidth)
+			const y = Math.trunc(t % texWidth)
+			map[i][j] = [x, y]
+		}
 	}
 }
-@media only screen and (max-width: 1380px) {
-	#tools {
-		width: 160px;
+
+const click = e => {
+	const pos = getPosition(e)
+	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
+		map[pos.x][pos.y][0] = (e.which === 3) ? 0 : tool[0]
+		map[pos.x][pos.y][1] = (e.which === 3) ? 0 : tool[1]
+		isPlacing = true
+		drawMap()
+		cf.clearRect(-w, -h, w * 2, h * 2)
+	}
+	updateHashState();
+}
+
+const unclick = () => {
+	if (isPlacing)
+		isPlacing = false
+}
+
+const drawMap = () => {
+	bg.clearRect(-w, -h, w * 2, h * 2)
+	for (let i = 0; i < ntiles; i++) {
+		for (let j = 0; j < ntiles; j++) {
+			drawImageTile(bg, i, j, map[i][j][0], map[i][j][1])
+		}
 	}
 }
 
-#tools > div {
-	display: block;
-	background-image: url('../assets/01_130x66_130x230.png');
-	background-repeat: no-repeat;
-	background-size: auto;
-	width: 130px;
-	height: 230px;
-	border: 2px dashed transparent;
-	box-sizing: border-box;
+const drawTile = (c, x, y, color) => {
+	c.save()
+	c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2)
+	c.beginPath()
+	c.moveTo(0, 0)
+	c.lineTo(tileWidth / 2, tileHeight / 2)
+	c.lineTo(0, tileHeight)
+	c.lineTo(-tileWidth / 2, tileHeight / 2)
+	c.closePath()
+	c.fillStyle = color
+	c.fill()
+	c.restore()
 }
 
-#tools > div.selected {
-	border-color: #b05355;
+const drawImageTile = (c, x, y, i, j) => {
+	c.save()
+	c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2)
+	j *= 130
+	i *= 230
+	c.drawImage(texture, j, i, 130, 230, -65, -130, 130, 230)
+	c.restore()
 }
 
-@media only screen and (max-width: 966px) {
+const getPosition = e => {
+	const _y = (e.offsetY - tileHeight * 2) / tileHeight
+	const _x = e.offsetX / tileWidth - ntiles / 2
+	x = Math.floor(_y - _x)
+	y = Math.floor(_x + _y)
+	return { x, y }
+}
 
-	#main {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-	}
-	
-	#tools {
-		display: flex;
-		align-items: center;
-		overflow: auto;
-		width: 100%;
-		height: 240px;
-	}
-	#area {
-		justify-content: flex-start;
-	}
-	
+const viz = (e) => {
+	if (isPlacing)
+		click(e)
+	const pos = getPosition(e)
+	cf.clearRect(-w, -h, w * 2, h * 2)
+	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles)
+		drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.2)')
 }
