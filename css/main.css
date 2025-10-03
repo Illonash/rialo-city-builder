@@ -69,11 +69,16 @@ button:hover, select:hover{ border-color:#3b4c74; }
   background-color:#0b1220;
 }
 
-#area{
-  position:relative;
-  overflow:auto;
-  background:#0b1220;
-}
+- #area{
+-   position:relative;
+-   overflow:auto;
+-   background:#0b1220;
+- }
++ #area{
++   position:relative;
++   overflow:auto;
++   background:#ffffff; /* back to light stage */
++ }
 
 /* canvases */
 canvas{ display:block; position:absolute; }
