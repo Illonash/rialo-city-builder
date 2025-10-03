@@ -1,5 +1,4 @@
 const $ = _ => document.querySelector(_)
-
 const $c = _ => document.createElement(_)
 
 let canvas, bg, fg, cf, ntiles, tileWidth, tileHeight, texWidth,
@@ -10,19 +9,23 @@ const texture = new Image()
 texture.src = "assets/01_130x66_130x230.png"
 texture.onload = _ => init()
 
-const init = () => {
+// --- Camera/view state (zoom) ---
+let view = {
+  scale: 1.0,
+  min: 0.5,
+  max: 2.0,
+  step: 0.1
+}
 
+const applyView = () => {
+  bg.setTransform(view.scale, 0, 0, view.scale, w/2, tileHeight*2)
+  cf.setTransform(view.scale, 0, 0, view.scale, w/2, tileHeight*2)
+}
+
+const init = () => {
 	tool = [0, 0]
 
-	map = [
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
-		[[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
-	]
+	map = Array.from({length: 7}, () => Array.from({length: 7}, () => [0,0]))
 
 	canvas = $("#bg")
 	canvas.width = 910
@@ -35,7 +38,7 @@ const init = () => {
 	ntiles = 7
 	tileWidth = 128
 	tileHeight = 64
-	bg.translate(w / 2, tileHeight * 2)
+	applyView()
 
 	loadHashState(document.location.hash.substring(1))
 	drawMap()
@@ -44,7 +47,8 @@ const init = () => {
 	fg.width = canvas.width
 	fg.height = canvas.height
 	cf = fg.getContext('2d')
-	cf.translate(w / 2, tileHeight * 2)
+	applyView()
+
 	fg.addEventListener('mousemove', viz)
 	fg.addEventListener('contextmenu', e => e.preventDefault())
 	fg.addEventListener('mouseup', unclick)
@@ -60,7 +64,6 @@ const init = () => {
 			const div = $c('div');
 			div.id = `tool_${toolCount++}`
 			div.style.display = "block"
-			/* width of 132 instead of 130  = 130 image + 2 border = 132 */
 			div.style.backgroundPosition = `-${j * 130 + 2}px -${i * 230}px`
 			div.addEventListener('click', e => {
 				tool = [i, j]
@@ -73,16 +76,34 @@ const init = () => {
 		}
 	}
 
+	// Toolbar events
+	$('#zoomInBtn')?.addEventListener('click', () => {
+	  view.scale = Math.min(view.max, +(view.scale + view.step).toFixed(2))
+	  drawMap()
+	})
+
+	$('#zoomOutBtn')?.addEventListener('click', () => {
+	  view.scale = Math.max(view.min, +(view.scale - view.step).toFixed(2))
+	  drawMap()
+	})
+
+	$('#clearBtn')?.addEventListener('click', () => {
+	  clearAll()
+	})
+
+	// Mouse wheel zoom
+	fg.addEventListener('wheel', (e) => {
+	  e.preventDefault()
+	  const dir = Math.sign(e.deltaY)
+	  const next = dir > 0 ? view.scale - view.step : view.scale + view.step
+	  view.scale = Math.max(view.min, Math.min(view.max, +next.toFixed(2)))
+	  drawMap()
+	}, { passive:false })
 }
 
-// From https://stackoverflow.com/a/36046727
-const ToBase64 = u8 => {
-	return btoa(String.fromCharCode.apply(null, u8))
-}
-
-const FromBase64 = str => {
-	return atob(str).split('').map(c => c.charCodeAt(0))
-}
+// Base64 helpers
+const ToBase64 = u8 => btoa(String.fromCharCode.apply(null, u8))
+const FromBase64 = str => atob(str).split('').map(c => c.charCodeAt(0))
 
 const updateHashState = () => {
 	let c = 0
@@ -124,18 +145,16 @@ const click = e => {
 		map[pos.x][pos.y][1] = (e.which === 3) ? 0 : tool[1]
 		isPlacing = true
 		drawMap()
-		cf.clearRect(-w, -h, w * 2, h * 2)
+		cf.clearRect(-w*2, -h*2, w*4, h*4)
 	}
 	updateHashState();
 }
 
-const unclick = () => {
-	if (isPlacing)
-		isPlacing = false
-}
+const unclick = () => { if (isPlacing) isPlacing = false }
 
 const drawMap = () => {
-	bg.clearRect(-w, -h, w * 2, h * 2)
+	bg.clearRect(-w*2, -h*2, w*4, h*4)
+	applyView()
 	for (let i = 0; i < ntiles; i++) {
 		for (let j = 0; j < ntiles; j++) {
 			drawImageTile(bg, i, j, map[i][j][0], map[i][j][1])
@@ -167,18 +186,29 @@ const drawImageTile = (c, x, y, i, j) => {
 }
 
 const getPosition = e => {
-	const _y = (e.offsetY - tileHeight * 2) / tileHeight
-	const _x = e.offsetX / tileWidth - ntiles / 2
-	x = Math.floor(_y - _x)
-	y = Math.floor(_x + _y)
+	const _y = (e.offsetY - tileHeight * 2) / (tileHeight * view.scale)
+	const _x = (e.offsetX - w/2) / (tileWidth * view.scale)
+	const x = Math.floor(_y - _x + ntiles/2)
+	const y = Math.floor(_x + _y)
 	return { x, y }
 }
 
 const viz = (e) => {
-	if (isPlacing)
-		click(e)
+	if (isPlacing) click(e)
 	const pos = getPosition(e)
-	cf.clearRect(-w, -h, w * 2, h * 2)
+	cf.clearRect(-w*2, -h*2, w*4, h*4)
+	applyView()
 	if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles)
 		drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.2)')
+}
+
+const clearAll = () => {
+  for (let i = 0; i < ntiles; i++) {
+    for (let j = 0; j < ntiles; j++) {
+      map[i][j] = [0,0]
+    }
+  }
+  cf.clearRect(-w*2, -h*2, w*4, h*4)
+  drawMap()
+  updateHashState()
 }
