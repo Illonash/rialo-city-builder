@@ -180,16 +180,19 @@ function drawImageTile(c, x, y, i, j) {
 }
 
 function getPosition(e) {
-  // konversi posisi kursor → koordinat grid, memperhitungkan scale & origin
   const rect = fg.getBoundingClientRect();
-  const px = (e.clientX - rect.left);
-  const py = (e.clientY - rect.top);
 
-  const _y = (py - tileHeight * 2 * view.scale) / (tileHeight * view.scale);
-  const _x = (px - (w/2) * view.scale) / (tileWidth * view.scale);
+  // posisi piksel relatif ke canvas
+  const px = (e.clientX - rect.left) / view.scale;
+  const py = (e.clientY - rect.top)  / view.scale;
 
-  const x = Math.floor(_y - _x + ntiles/2);
+  // pakai rumus lama (dari versi awal) tapi sudah disesuaikan scale
+  const _y = (py - tileHeight * 2) / tileHeight;
+  const _x = (px / tileWidth) - (ntiles / 2);
+
+  const x = Math.floor(_y - _x);
   const y = Math.floor(_x + _y);
+
   return { x, y };
 }
 
