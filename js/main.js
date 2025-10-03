@@ -9,8 +9,6 @@ let map, tools, tool, activeTool, isPlacing, previousState;
 // ====== konfigurasi papan ======
 const HEADER_SHIFT = 120;     // ruang kosong di atas untuk judul
 let   GRID_N       = 16;      // ukuran papan NxN (ubah bebas: 12/16/20)
--const TILE_W    = 128;
--const TILE_H    = 64;
 +const TILE_W    = 130;   // match atlas Kenney (basis belah-ketupat)
 +const TILE_H    = 66;    // match atlas Kenney
 
