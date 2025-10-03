@@ -7,9 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="description" content="Rialo City Builder — a tiny isometric city builder prototype." />
 
-  <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <!-- Ganti URL di bawah ini ke GitHub Pages kamu -->
   <meta property="og:url" content="https://<username>.github.io/rialo-city-builder/" />
   <meta property="og:title" content="Rialo City Builder" />
   <meta property="og:description" content="Build a tiny isometric city on a 130×66 grid." />
@@ -17,7 +15,6 @@
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
 
-  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Rialo City Builder" />
   <meta name="twitter:description" content="Build a tiny isometric city on a 130×66 grid." />
@@ -38,6 +35,15 @@
       <canvas id="fg"></canvas>
     </div>
   </section>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button id="zoomOutBtn" title="Zoom Out">−</button>
+    <span class="sep"></span>
+    <button id="zoomInBtn" title="Zoom In">+</button>
+    <span class="sep"></span>
+    <button id="clearBtn" title="Clear All">Clear</button>
+  </div>
 
   <script src="js/main.js"></script>
 </body>
