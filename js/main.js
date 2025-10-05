@@ -3,33 +3,41 @@ const $c = tag => document.createElement(tag);
 
 let canvas, bg, fg, cf;
 let ntiles, tileWidth, tileHeight, texWidth, texHeight;
-let map, tools, tool, activeTool, isPlacing, previousState;
+let map, tools, activeTool, isPlacing, previousState;
 let w, h;
 
-/* spritesheet (ukuran Kenney 130x66 tiles, tinggi objek 230) */
-const texture = new Image();
-texture.src = "assets/01_130x66_130x230.png";
-texture.onload = () => init();
-
-/* ---- state zoom/camera ---- */
+/* ---- camera/zoom ---- */
 const view = { scale: 1.0, min: 0.5, max: 2.0, step: 0.1 };
-
-function applyView() {
+function clamp(v, a, b){ return Math.max(a, Math.min(b, +v.toFixed(2))); }
+function applyView(){
   if (bg) bg.setTransform(view.scale, 0, 0, view.scale, w/2, tileHeight*2);
   if (cf) cf.setTransform(view.scale, 0, 0, view.scale, w/2, tileHeight*2);
 }
 
-function init() {
-  tool = [0, 0];
+/* ---- spritesheet Kenney (bangunan/jalan dsb) ---- */
+const texture = new Image();
+texture.src = "assets/01_130x66_130x230.png";
 
-  // peta 7x7 default
+/* ---- manifest kendaraan ---- */
+let vehicleManifest = null;     // JSON dari assets/vehicles/manifest.json
+let vehiclePalettes = [];       // daftar palette (sedan, taxi, ...)
+let mode = "tiles";             // "tiles" | "vehicles"
+let currentVehiclePalette = null;
+let currentVehicleItem = null;  // item kendaraan yang sedang dipilih
+const vehicles = [];            // {x,y,item}
+
+/* ---- init setelah assets siap ---- */
+texture.onload = () => init();
+
+async function init(){
+  // grid awal
   map = Array.from({ length: 7 }, () => Array.from({ length: 7 }, () => [0, 0]));
 
+  // canvas
   canvas = $("#bg");
   canvas.width  = 910;
   canvas.height = 666;
-  w = 910;
-  h = 462;
+  w = 910; h = 462;
 
   texWidth  = 12;
   texHeight = 6;
@@ -40,7 +48,7 @@ function init() {
   bg = canvas.getContext("2d");
   applyView();
 
-  // gambar awal (setelah hash di-load)
+  // load state dari hash
   loadHashState(location.hash.substring(1));
   drawMap();
 
@@ -50,7 +58,7 @@ function init() {
   cf = fg.getContext("2d");
   applyView();
 
-  // interaction
+  // input
   fg.addEventListener("mousemove", viz);
   fg.addEventListener("contextmenu", e => e.preventDefault());
   fg.addEventListener("mouseup",   unclick);
@@ -67,48 +75,161 @@ function init() {
     drawMap();
   }, { passive:false });
 
-  // tools
+  // panel tools
   tools = $("#tools");
-  let toolCount = 0;
-  for (let i = 0; i < texHeight; i++) {
-    for (let j = 0; j < texWidth; j++) {
-      const div = $c("div");
-      div.id = `tool_${toolCount++}`;
-      div.style.display = "block";
-      div.style.backgroundPosition = `-${j*130+2}px -${i*230}px`;
-      div.addEventListener("click", (e) => {
-        tool = [i, j];
-        if (activeTool) $(`#${activeTool}`).classList.remove("selected");
-        activeTool = e.target.id;
-        $(`#${activeTool}`).classList.add("selected");
-      });
-      tools.appendChild(div);
-    }
-  }
+  buildTileTools(); // default: Tiles
 
   // toolbar buttons
   $("#zoomInBtn") ?.addEventListener("click", () => { view.scale = clamp(view.scale + view.step, view.min, view.max); drawMap(); });
   $("#zoomOutBtn")?.addEventListener("click", () => { view.scale = clamp(view.scale - view.step, view.min, view.max); drawMap(); });
   $("#clearBtn")  ?.addEventListener("click", clearAll);
+
+  // load manifest kendaraan, isi dropdown palette
+  await loadVehicleManifest();
+  populatePaletteSelect();
+
+  // handle perubahan palette
+  $("#paletteSel").addEventListener("change", onPaletteChanged);
 }
 
-/* helpers */
-const clamp = (v, a, b) => Math.max(a, Math.min(b, +v.toFixed(2)));
+/* =========================
+   TOOLS (panel kiri)
+   ========================= */
+function clearToolsPanel(){
+  tools.innerHTML = "";
+  activeTool = null;
+}
 
-// Base64 compaction
+function buildTileTools(){
+  mode = "tiles";
+  clearToolsPanel();
+  let toolCount = 0;
+  for (let i = 0; i < texHeight; i++){
+    for (let j = 0; j < texWidth; j++){
+      const div = $c("div");
+      div.id = `tool_${toolCount++}`;
+      div.style.display = "block";
+      div.style.backgroundPosition = `-${j*130+2}px -${i*230}px`;
+      div.addEventListener("click", (e) => {
+        // simpan pasangan indeks i,j ke dataset
+        div.dataset.ti = i;
+        div.dataset.tj = j;
+        // mark selected
+        if (activeTool) $(`#${activeTool}`).classList.remove("selected");
+        activeTool = e.currentTarget.id;
+        $(`#${activeTool}`).classList.add("selected");
+        currentVehicleItem = null;
+      });
+      // simpan i,j agar bisa dibaca saat click
+      div.dataset.ti = i;
+      div.dataset.tj = j;
+      tools.appendChild(div);
+    }
+  }
+  // pilih default
+  const first = tools.firstElementChild;
+  if (first){
+    first.click();
+  }
+}
+
+function buildVehicleTools(paletteId){
+  mode = "vehicles";
+  clearToolsPanel();
+  currentVehicleItem = null;
+  const pal = vehiclePalettes.find(p => p.id === paletteId);
+  if (!pal) return;
+  currentVehiclePalette = pal;
+
+  for (const item of pal.items){
+    const div = $c("div");
+    div.style.display = "block";
+    div.style.backgroundImage = `url('${item.src}')`;
+    div.style.backgroundRepeat = "no-repeat";
+    div.style.backgroundSize = "contain";
+    div.style.width = "130px";   // panel preview agar konsisten
+    div.style.height = "130px";
+    div.style.border = "2px dashed transparent";
+    div.addEventListener("click", (e) => {
+      if (activeTool) $(`#${activeTool}`).classList.remove("selected");
+      activeTool = null; // tidak pakai index tile
+      currentVehicleItem = item;
+      div.classList.add("selected");
+    });
+    tools.appendChild(div);
+  }
+  // pilih default
+  const first = tools.firstElementChild;
+  if (first) first.click();
+}
+
+/* =========================
+   MANIFEST KENDARAAN
+   ========================= */
+async function loadVehicleManifest(){
+  try{
+    const res = await fetch("assets/vehicles/manifest.json", { cache: "no-store" });
+    vehicleManifest = await res.json();
+    vehiclePalettes = vehicleManifest?.palettes || [];
+    // preload gambar supaya tidak blank saat digambar
+    const promises = [];
+    for (const pal of vehiclePalettes){
+      for (const it of pal.items){
+        const img = new Image();
+        it.img = img;
+        promises.push(new Promise((resolve, reject) => {
+          img.onload = resolve; img.onerror = resolve; // lanjut walau gagal
+          img.src = it.src;
+        }));
+      }
+    }
+    await Promise.all(promises);
+  }catch(e){
+    console.warn("Failed to load vehicle manifest:", e);
+  }
+}
+
+function populatePaletteSelect(){
+  const sel = $("#paletteSel");
+  // hapus semua kecuali "Tiles"
+  for (let i = sel.options.length - 1; i >= 1; i--) sel.remove(i);
+  // tambah palettes dari manifest
+  for (const pal of vehiclePalettes){
+    const opt = document.createElement("option");
+    opt.value = `vehicles:${pal.id}`;
+    opt.textContent = pal.label || pal.id;
+    sel.appendChild(opt);
+  }
+}
+
+function onPaletteChanged(e){
+  const val = e.target.value;
+  if (val === "tiles"){
+    buildTileTools();
+  }else if (val.startsWith("vehicles:")){
+    const palId = val.split(":")[1];
+    buildVehicleTools(palId);
+  }
+  // hapus highlight cursor tile
+  cf && cf.clearRect(-w*2, -h*2, w*4, h*4);
+}
+
+/* =========================
+   HASH SAVE (Tiles only, duluan)
+   ========================= */
 const ToBase64   = u8  => btoa(String.fromCharCode.apply(null, u8));
 const FromBase64 = str => atob(str).split('').map(c => c.charCodeAt(0));
 
-function updateHashState() {
+function updateHashState(){
   let c = 0;
   const u8 = new Uint8Array(ntiles * ntiles);
-  for (let i = 0; i < ntiles; i++) {
-    for (let j = 0; j < ntiles; j++) {
+  for (let i = 0; i < ntiles; i++){
+    for (let j = 0; j < ntiles; j++){
       u8[c++] = map[i][j][0] * texWidth + map[i][j][1];
     }
   }
   const state = ToBase64(u8);
-  if (!previousState || previousState !== state) {
+  if (!previousState || previousState !== state){
     history.pushState(undefined, undefined, `#${state}`);
     previousState = state;
   }
@@ -119,11 +240,11 @@ window.addEventListener("popstate", () => {
   drawMap();
 });
 
-function loadHashState(state) {
+function loadHashState(state){
   const u8 = FromBase64(state || "");
   let c = 0;
-  for (let i = 0; i < ntiles; i++) {
-    for (let j = 0; j < ntiles; j++) {
+  for (let i = 0; i < ntiles; i++){
+    for (let j = 0; j < ntiles; j++){
       const t = u8[c++] || 0;
       const x = Math.trunc(t / texWidth);
       const y = Math.trunc(t % texWidth);
@@ -132,31 +253,68 @@ function loadHashState(state) {
   }
 }
 
-function click(e) {
+/* =========================
+   INPUT
+   ========================= */
+function click(e){
   const pos = getPosition(e);
-  if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
-    map[pos.x][pos.y][0] = (e.which === 3) ? 0 : tool[0];
-    map[pos.x][pos.y][1] = (e.which === 3) ? 0 : tool[1];
-    isPlacing = true;
-    drawMap();
-    cf.clearRect(-w*2, -h*2, w*4, h*4);
+  if (!(pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles)) return;
+
+  if (mode === "tiles"){
+    // baca i,j dari elemen tools yang dipilih
+    let i = 0, j = 0;
+    if (tools && tools.querySelector(".selected")){
+      const sel = tools.querySelector(".selected");
+      i = +sel.dataset.ti || 0;
+      j = +sel.dataset.tj || 0;
+    }
+    map[pos.x][pos.y][0] = (e.which === 3) ? 0 : i;
+    map[pos.x][pos.y][1] = (e.which === 3) ? 0 : j;
+  }else{
+    // vehicles
+    if (e.which === 3){
+      // hapus kendaraan pada sel ini (ambil yang terakhir di sel tsb)
+      for (let k = vehicles.length - 1; k >= 0; k--){
+        if (vehicles[k].x === pos.x && vehicles[k].y === pos.y){
+          vehicles.splice(k, 1);
+          break;
+        }
+      }
+    }else if (currentVehicleItem){
+      vehicles.push({ x: pos.x, y: pos.y, item: currentVehicleItem });
+    }
   }
-  updateHashState();
+
+  isPlacing = true;
+  drawMap();
+  cf.clearRect(-w*2, -h*2, w*4, h*4);
+  updateHashState(); // tiles only
 }
 
 function unclick(){ if (isPlacing) isPlacing = false; }
 
-function drawMap() {
+/* =========================
+   RENDER
+   ========================= */
+function drawMap(){
   bg.clearRect(-w*2, -h*2, w*4, h*4);
   applyView();
-  for (let i = 0; i < ntiles; i++) {
-    for (let j = 0; j < ntiles; j++) {
+
+  // Tiles
+  for (let i = 0; i < ntiles; i++){
+    for (let j = 0; j < ntiles; j++){
       drawImageTile(bg, i, j, map[i][j][0], map[i][j][1]);
     }
   }
+
+  // Vehicles (urutkan by depth x+y)
+  vehicles.sort((a,b) => (a.x + a.y) - (b.x + b.y));
+  for (const v of vehicles){
+    drawVehicle(bg, v.x, v.y, v.item);
+  }
 }
 
-function drawTile(c, x, y, color) {
+function drawTile(c, x, y, color){
   c.save();
   c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2);
   c.beginPath();
@@ -170,48 +328,58 @@ function drawTile(c, x, y, color) {
   c.restore();
 }
 
-function drawImageTile(c, x, y, i, j) {
+function drawImageTile(c, x, y, i, j){
   c.save();
   c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2);
-  j *= 130;  // offset X di spritesheet
-  i *= 230;  // offset Y di spritesheet
+  j *= 130; // kolom
+  i *= 230; // baris
   c.drawImage(texture, j, i, 130, 230, -65, -130, 130, 230);
   c.restore();
 }
 
-function getPosition(e) {
-  const rect = fg.getBoundingClientRect();
+function drawVehicle(c, x, y, item){
+  if (!item || !item.img) return;
+  c.save();
+  c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2);
+  const dx = (item.anchor?.dx ?? -48);
+  const dy = (item.anchor?.dy ?? -52);
+  c.drawImage(item.img, dx, dy);
+  c.restore();
+}
 
-  // posisi piksel relatif ke canvas
+/* =========================
+   POSISI KURSOR
+   ========================= */
+function getPosition(e){
+  const rect = fg.getBoundingClientRect();
   const px = (e.clientX - rect.left) / view.scale;
   const py = (e.clientY - rect.top)  / view.scale;
 
-  // pakai rumus lama (dari versi awal) tapi sudah disesuaikan scale
   const _y = (py - tileHeight * 2) / tileHeight;
   const _x = (px / tileWidth) - (ntiles / 2);
 
   const x = Math.floor(_y - _x);
   const y = Math.floor(_x + _y);
-
   return { x, y };
 }
 
-function viz(e) {
+function viz(e){
   if (isPlacing) click(e);
   const pos = getPosition(e);
   cf.clearRect(-w*2, -h*2, w*4, h*4);
   applyView();
-  if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
+  if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles){
     drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.2)');
   }
 }
 
-function clearAll() {
-  for (let i = 0; i < ntiles; i++) {
-    for (let j = 0; j < ntiles; j++) {
+function clearAll(){
+  for (let i = 0; i < ntiles; i++){
+    for (let j = 0; j < ntiles; j++){
       map[i][j] = [0,0];
     }
   }
+  vehicles.length = 0;
   cf.clearRect(-w*2, -h*2, w*4, h*4);
   drawMap();
   updateHashState();
