@@ -1,0 +1,45 @@
+{
+  "tile": { "w": 130, "h": 66 },
+
+  "palettes": [
+    {
+      "id": "sedan",
+      "label": "Sedan",
+      "items": [
+        { "id": "carGreen2_000", "src": "assets/vehicles/sedan/carGreen2_000.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_001", "src": "assets/vehicles/sedan/carGreen2_001.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_002", "src": "assets/vehicles/sedan/carGreen2_002.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_003", "src": "assets/vehicles/sedan/carGreen2_003.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_004", "src": "assets/vehicles/sedan/carGreen2_004.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_005", "src": "assets/vehicles/sedan/carGreen2_005.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_006", "src": "assets/vehicles/sedan/carGreen2_006.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_007", "src": "assets/vehicles/sedan/carGreen2_007.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_008", "src": "assets/vehicles/sedan/carGreen2_008.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_009", "src": "assets/vehicles/sedan/carGreen2_009.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_010", "src": "assets/vehicles/sedan/carGreen2_010.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_011", "src": "assets/vehicles/sedan/carGreen2_011.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_013", "src": "assets/vehicles/sedan/carGreen2_013.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_014", "src": "assets/vehicles/sedan/carGreen2_014.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } },
+        { "id": "carGreen2_015", "src": "assets/vehicles/sedan/carGreen2_015.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 } }
+      ]
+    },
+    {
+      "id": "taxi",
+      "label": "Taxi",
+      "items": [
+        { "id": "taxi_E",   "src": "assets/vehicles/taxi/taxi_E.png",   "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "E" },
+        { "id": "taxi_NE",  "src": "assets/vehicles/taxi/taxi_NE.png",  "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "NE" },
+        { "id": "taxi_NED", "src": "assets/vehicles/taxi/taxi_NED.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "NED" },
+        { "id": "taxi_NEU", "src": "assets/vehicles/taxi/taxi_NEU.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "NEU" },
+        { "id": "taxi_NWD", "src": "assets/vehicles/taxi/taxi_NWD.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "NWD" },
+        { "id": "taxi_NWU", "src": "assets/vehicles/taxi/taxi_NWU.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "NWU" },
+        { "id": "taxi_SE",  "src": "assets/vehicles/taxi/taxi_SE.png",  "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "SE" },
+        { "id": "taxi_SED", "src": "assets/vehicles/taxi/taxi_SED.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "SED" },
+        { "id": "taxi_SEU", "src": "assets/vehicles/taxi/taxi_SEU.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "SEU" },
+        { "id": "taxi_SW",  "src": "assets/vehicles/taxi/taxi_SW.png",  "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "SW" },
+        { "id": "taxi_SWD", "src": "assets/vehicles/taxi/taxi_SWD.png", "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "SWD" },
+        { "id": "taxi_W",   "src": "assets/vehicles/taxi/taxi_W.png",   "w": 96, "h": 72, "anchor": { "dx": -48, "dy": -52 }, "dir": "W" }
+      ]
+    }
+  ]
+}
