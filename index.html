@@ -23,6 +23,7 @@
   <link rel="icon" href="favicon.png" sizes="256x256" />
   <link rel="apple-touch-icon" href="favicon.png" />
   <title>Rialo City Builder</title>
+
   <link rel="stylesheet" href="css/main.css" />
 </head>
 <body>
@@ -36,11 +37,16 @@
 
   <!-- Toolbar -->
   <div id="toolbar">
+    <label for="paletteSel" style="color:#fff;font-size:13px;opacity:.8;margin-right:6px;">Palette:</label>
+    <select id="paletteSel" title="Choose palette">
+      <option value="tiles">Tiles</option>
+      <!-- opsi kendaraan akan diisi dari manifest lewat JS -->
+    </select>
+    <span class="sep"></span>
     <button id="zoomOutBtn" title="Zoom Out">−</button>
+    <button id="zoomInBtn"  title="Zoom In">+</button>
     <span class="sep"></span>
-    <button id="zoomInBtn" title="Zoom In">+</button>
-    <span class="sep"></span>
-    <button id="clearBtn" title="Clear All">Clear</button>
+    <button id="clearBtn"   title="Clear All">Clear</button>
   </div>
 
   <script src="js/main.js"></script>
