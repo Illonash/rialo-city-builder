@@ -42,7 +42,8 @@ canvas {
 @media only screen and (max-width: 1540px) { #tools { width: 300px; } }
 @media only screen and (max-width: 1380px) { #tools { width: 160px; } }
 
-#tools > div {
+/* tombol tiles (dislice dari spritesheet 130x66/230) */
+#tools > div.tool-tile {
   display: block;
   background-image: url('../assets/01_130x66_130x230.png');
   background-repeat: no-repeat;
@@ -51,9 +52,22 @@ canvas {
   height: 230px;
   border: 2px dashed transparent;
   box-sizing: border-box;
+  margin: 6px;
 }
+#tools > .tool-tile.selected { border-color: #b05355; }
 
-#tools > div.selected { border-color: #b05355; }
+/* thumbnail kendaraan — lebih kecil & ringan */
+#tools > div.tool-vehicle {
+  width: 96px;
+  height: 96px;
+  background-size: contain;
+  background-position: center center;
+  background-repeat: no-repeat;
+  border: 2px dashed transparent;
+  box-sizing: border-box;
+  margin: 6px;
+}
+#tools > .tool-vehicle.selected { border-color: #b05355; }
 
 @media only screen and (max-width: 966px) {
   #main { position: relative; display: flex; flex-direction: column; align-items: flex-start; }
@@ -61,7 +75,7 @@ canvas {
   #area { justify-content: flex-start; }
 }
 
-/* Toolbar mengambang */
+/* Toolbar mengambang (kamu sudah punya) */
 #toolbar{
   position: fixed;
   top: 14px;
@@ -93,15 +107,12 @@ canvas {
 #toolbar button:hover{ background:#e8eaf1; }
 #toolbar .sep{ width:1px;height:20px;background:rgba(255,255,255,.15); }
 
-#toolbar select{
-  appearance:none;
-  background:#f8f9fb;
-  color:#111;
-  border:0;
-  border-radius:8px;
-  padding:6px 10px;
-  font-weight:600;
-  font-size:14px;
-  cursor:pointer;
+/* dropdown palette yang ditambahkan via JS */
+#paletteWrap{
+  display:inline-flex; align-items:center; gap:6px;
+  color:#e6e8ee; font-weight:600; font-size:14px;
 }
-#toolbar select:focus { outline: none; }
+#paletteSel{
+  appearance:none; background:#f8f9fb; color:#111;
+  border-radius:8px; border:0; padding:6px 10px; font-weight:700;
+}
