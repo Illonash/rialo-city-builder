@@ -1,79 +1,129 @@
+/* ========= util DOM ========= */
 const $  = sel => document.querySelector(sel);
 const $c = tag => document.createElement(tag);
 
-/* ====== Canvas & Grid ====== */
+/* ========= canvas & grid state ========= */
 let canvas, bg, fg, cf;
 let ntiles, tileWidth, tileHeight, texWidth, texHeight;
-let map, tools, activeTool, isPlacing, previousState;
+let map, tools, tool, activeTool, isPlacing, previousState;
 let w, h;
 
-/* ====== Zoom/Camera ====== */
+/* ========= mode & layers =========
+   - mode "tiles": pakai spritesheet Kenney
+   - mode "vehicles": pakai file per-gambar dari manifest
+*/
+let mode = "tiles";
+let vehMap; // layer kendaraan (agar tak tumpang tindih)
+
+/* ========= view / zoom ========= */
 const view = { scale: 1.0, min: 0.5, max: 2.0, step: 0.1 };
-const clamp = (v, a, b) => Math.max(a, Math.min(b, +v.toFixed(2)));
 function applyView() {
   if (bg) bg.setTransform(view.scale, 0, 0, view.scale, w/2, tileHeight*2);
   if (cf) cf.setTransform(view.scale, 0, 0, view.scale, w/2, tileHeight*2);
 }
 
-/* ====== Tiles spritesheet (Kenney) ====== */
+/* ========= base tiles spritesheet ========= */
 const texture = new Image();
 texture.src = "assets/01_130x66_130x230.png";
+texture.onload = () => tryInit();
 
-/* ====== Vehicles via manifest ====== */
-let vehicleManifest = null;        // JSON dari assets/vehicles/manifest.json
-let vehiclePalettes = [];          // daftar palette (sedan, taxi, ...)
-let mode = "tiles";                // "tiles" | "vehicles"
-let currentVehiclePalette = null;  // palette terpilih
-let currentVehicleItem = null;     // item kendaraan terpilih (punya .img, .anchor, .src)
-const vehicles = [];               // daftar {x,y,item}
-let vehiclesGrid = [];             // matriks okupansi (null | index vehicles)
+/* ========= vehicles manifest ========= */
+let vehiclePalettes = [];   // [{id,label,items:[{id,src,anchor}]}]
+let currentVehiclePalette = null;
+let currentVehicleItem = null;
 
-/* Set true kalau mau membatasi hanya di jalan (nanti kita isi whitelist) */
+// offset global untuk fine-tune semua mobil sekaligus.
+// dy > 0 = turun; dy < 0 = naik
+const VEHICLE_GLOBAL_OFFSET = { dx: 0, dy: 0 };
+
+/* Kalau mau batasi hanya di jalan:
+   - Set true, lalu isi ROAD_TILES dengan index tile jalan (row*12 + col).
+*/
 const ALLOW_ONLY_ON_ROAD = false;
-/* Contoh whitelist index “road” (baris spritesheet * texWidth + kolom).
-   Kita isi nanti kalau kamu sudah tentukan persis id tiles jalannya. */
-const ROAD_TILES = new Set([
-  // contoh:  (row * texWidth + col)
-  // 1*12+2, 1*12+3, ...
-]);
+const ROAD_TILES = new Set(); // contoh: ROAD_TILES.add( (row*12) + col )
 
-/* ====== Init ketika tiles siap ====== */
-texture.onload = () => init();
+/* ========= init ========= */
+let baseReady = false, manifestReady = false;
+async function tryInit(){
+  baseReady = true;
+  if (!manifestReady) {
+    try {
+      const res = await fetch("assets/vehicles/manifest.json", {cache: "no-store"});
+      const data = await res.json();
+      vehiclePalettes = await loadVehicleImages(data.palettes || []);
+      manifestReady = true;
+    } catch(e){
+      // manifest opsional—kalau tak ada, tetap jalan mode tiles
+      console.warn("vehicles manifest missing/invalid:", e);
+      manifestReady = true;
+    }
+  }
+  init();
+}
 
-async function init() {
-  /* Grid awal 7x7 */
-  map = Array.from({ length: 7 }, () => Array.from({ length: 7 }, () => [0, 0]));
+async function loadVehicleImages(palettes){
+  // preload semua gambar kendaraan agar smooth
+  const loadImg = (src) => new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
 
-  /* Canvas */
+  const out = [];
+  for (const pal of palettes){
+    const items = [];
+    for (const it of pal.items || []){
+      const img = await loadImg(it.src);
+      items.push({
+        id: it.id,
+        src: it.src,
+        img,
+        anchor: it.anchor || null
+      });
+    }
+    out.push({ id: pal.id, label: pal.label, items });
+  }
+  return out;
+}
+
+function init() {
+  /* default tool */
+  tool = [0, 0];
+
+  /* peta 7x7 default */
+  ntiles = 7;
+  map = Array.from({ length: ntiles }, () => Array.from({ length: ntiles }, () => [0, 0]));
+  vehMap = Array.from({ length: ntiles }, () => Array.from({ length: ntiles }, () => null));
+
+  /* canvas */
   canvas = $("#bg");
   canvas.width  = 910;
   canvas.height = 666;
-  w = 910; h = 462;
+  w = 910;
+  h = 462;
 
-  texWidth   = 12;
-  texHeight  = 6;
-  ntiles     = 7;
+  /* sheet Kenney */
+  texWidth  = 12;
+  texHeight = 6;
   tileWidth  = 128;
   tileHeight = 64;
 
-  /* Context */
+  /* contexts */
   bg = canvas.getContext("2d");
   applyView();
 
-  /* Load state (TILES) dari hash */
+  /* load hash lalu gambar awal */
   loadHashState(location.hash.substring(1));
+  drawMap();
 
-  /* Foreground untuk hover highlight */
   fg = $("#fg");
   fg.width  = canvas.width;
   fg.height = canvas.height;
   cf = fg.getContext("2d");
   applyView();
 
-  /* Occupancy grid kendaraan */
-  vehiclesGrid = Array.from({ length: ntiles }, () => Array(ntiles).fill(null));
-
-  /* Input */
+  /* interaction */
   fg.addEventListener("mousemove", viz);
   fg.addEventListener("contextmenu", e => e.preventDefault());
   fg.addEventListener("mouseup",   unclick);
@@ -81,6 +131,7 @@ async function init() {
   fg.addEventListener("touchend",  click);
   fg.addEventListener("pointerup", click);
 
+  /* wheel zoom */
   fg.addEventListener("wheel", (e) => {
     e.preventDefault();
     const dir  = Math.sign(e.deltaY);
@@ -89,152 +140,113 @@ async function init() {
     drawMap();
   }, { passive:false });
 
+  /* tools panel */
   tools = $("#tools");
-  buildTileTools(); // default
+  buildTileTools();     // default tampilkan tiles
 
-  /* Toolbar */
+  /* toolbar buttons */
   $("#zoomInBtn") ?.addEventListener("click", () => { view.scale = clamp(view.scale + view.step, view.min, view.max); drawMap(); });
   $("#zoomOutBtn")?.addEventListener("click", () => { view.scale = clamp(view.scale - view.step, view.min, view.max); drawMap(); });
   $("#clearBtn")  ?.addEventListener("click", clearAll);
 
-  /* Manifest kendaraan */
-  await loadVehicleManifest();
-  populatePaletteSelect();
-
-  $("#paletteSel").addEventListener("change", onPaletteChanged);
-
-  /* Render awal */
-  drawMap();
+  /* palette dropdown (disisipkan ke toolbar supaya index.html kamu tak perlu diubah) */
+  injectPaletteDropdown();
 }
 
-/* =========================
-   Panel Tools
-   ========================= */
-function clearToolsPanel() {
+/* ========= UI: palette dropdown ========= */
+function injectPaletteDropdown(){
+  const bar = document.getElementById("toolbar");
+  if (!bar) return;
+
+  const wrap = $c("div");
+  wrap.id = "paletteWrap";
+
+  const label = $c("span");
+  label.textContent = "Palette:";
+  wrap.appendChild(label);
+
+  const sel = $c("select");
+  sel.id = "paletteSel";
+  const opTiles = $c("option"); opTiles.value = "tiles"; opTiles.textContent = "Tiles";
+  sel.appendChild(opTiles);
+
+  // tambah palettes kendaraan bila ada
+  for (const pal of vehiclePalettes){
+    const opt = $c("option");
+    opt.value = pal.id;
+    opt.textContent = pal.label || pal.id;
+    sel.appendChild(opt);
+  }
+
+  sel.addEventListener("change", () => {
+    if (sel.value === "tiles") {
+      mode = "tiles";
+      buildTileTools();
+    } else {
+      mode = "vehicles";
+      buildVehicleTools(sel.value);
+    }
+  });
+
+  // sisipkan paling depan di toolbar
+  bar.insertBefore(wrap, bar.firstChild);
+  wrap.appendChild(sel);
+}
+
+/* ========= Tools builder ========= */
+function clearToolsPanel(){
   tools.innerHTML = "";
   activeTool = null;
+  currentVehicleItem = null;
 }
 
-function buildTileTools() {
-  mode = "tiles";
+function buildTileTools(){
   clearToolsPanel();
-
-  let toolCount = 0;
   for (let i = 0; i < texHeight; i++) {
     for (let j = 0; j < texWidth; j++) {
       const div = $c("div");
-      div.id = `tool_${toolCount++}`;
-      div.style.display = "block";
-      div.style.backgroundPosition = `-${j*130+2}px -${i*230}px`;
-      // simpan index di dataset untuk dipakai saat klik
-      div.dataset.ti = i;
-      div.dataset.tj = j;
-
+      div.className = "tool-tile";
+      div.style.backgroundPosition = `-${j*130+2}px -${i*230}px`; // +2 utk border 2px
       div.addEventListener("click", (e) => {
-        if (activeTool) $(`#${activeTool}`).classList.remove("selected");
-        activeTool = e.currentTarget.id;
-        e.currentTarget.classList.add("selected");
-        currentVehicleItem = null;
+        tool = [i, j];
+        tools.querySelectorAll(".selected").forEach(el => el.classList.remove("selected"));
+        div.classList.add("selected");
       });
-
       tools.appendChild(div);
     }
   }
-
-  const first = tools.firstElementChild;
-  if (first) first.click();
+  mode = "tiles";
 }
 
-function buildVehicleTools(paletteId) {
-  mode = "vehicles";
+function buildVehicleTools(paletteId){
   clearToolsPanel();
-  currentVehicleItem = null;
-
   const pal = vehiclePalettes.find(p => p.id === paletteId);
   if (!pal) return;
   currentVehiclePalette = pal;
 
-  for (const item of pal.items) {
+  for (const item of pal.items){
     const div = $c("div");
-    div.style.display = "block";
+    div.className = "tool-vehicle";
     div.style.backgroundImage = `url('${item.src}')`;
-    div.style.backgroundRepeat = "no-repeat";
-    div.style.backgroundSize = "contain";
-    div.style.width  = "130px";
-    div.style.height = "130px";
-    div.style.border = "2px dashed transparent";
-    div.addEventListener("click", (e) => {
+    div.title = item.id;
+    div.addEventListener("click", () => {
       tools.querySelectorAll(".selected").forEach(el => el.classList.remove("selected"));
       div.classList.add("selected");
       currentVehicleItem = item;
-      activeTool = null;
-      // memperbaiki offset highlight setelah ganti palette
-      applyView();
-      cf && cf.clearRect(-w*2, -h*2, w*4, h*4);
     });
     tools.appendChild(div);
   }
 
+  // auto pilih pertama
   const first = tools.firstElementChild;
   if (first) first.click();
+  mode = "vehicles";
 }
 
-/* =========================
-   Manifest Kendaraan
-   ========================= */
-async function loadVehicleManifest() {
-  try {
-    const res = await fetch("assets/vehicles/manifest.json", { cache:"no-store" });
-    vehicleManifest  = await res.json();
-    vehiclePalettes  = vehicleManifest?.palettes || [];
+/* ========= helpers ========= */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, +v.toFixed(2)));
 
-    // preload
-    const promises = [];
-    for (const pal of vehiclePalettes) {
-      for (const it of pal.items) {
-        const img = new Image();
-        it.img = img;
-        promises.push(new Promise(resolve => {
-          img.onload = resolve; img.onerror = resolve;
-          img.src = it.src;
-        }));
-      }
-    }
-    await Promise.all(promises);
-  } catch (e) {
-    console.warn("Failed to load vehicle manifest:", e);
-  }
-}
-
-function populatePaletteSelect() {
-  const sel = $("#paletteSel");
-  // hapus opsi lama kecuali "Tiles"
-  for (let i = sel.options.length - 1; i >= 1; i--) sel.remove(i);
-
-  for (const pal of vehiclePalettes) {
-    const opt = document.createElement("option");
-    opt.value = `vehicles:${pal.id}`;
-    opt.textContent = pal.label || pal.id;
-    sel.appendChild(opt);
-  }
-}
-
-function onPaletteChanged(e) {
-  const val = e.target.value;
-  if (val === "tiles") {
-    buildTileTools();
-  } else if (val.startsWith("vehicles:")) {
-    const palId = val.split(":")[1];
-    buildVehicleTools(palId);
-  }
-  // reset highlight
-  applyView();
-  cf && cf.clearRect(-w*2, -h*2, w*4, h*4);
-}
-
-/* =========================
-   Hash Save/Load (Tiles saja dulu)
-   ========================= */
+// Base64 compaction (map tiles saja; vehMap tidak kita serialisasi, biar ringan)
 const ToBase64   = u8  => btoa(String.fromCharCode.apply(null, u8));
 const FromBase64 = str => atob(str).split('').map(c => c.charCodeAt(0));
 
@@ -271,68 +283,75 @@ function loadHashState(state) {
   }
 }
 
-/* =========================
-   Input
-   ========================= */
+/* ========= interactions ========= */
 function click(e) {
   const pos = getPosition(e);
   if (!(pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles)) return;
 
+  // Right click = erase (kedua mode)
+  const isErase = (e.which === 3) || (e.button === 2);
+
   if (mode === "tiles") {
-    let i = 0, j = 0;
-    const sel = tools.querySelector(".selected");
-    if (sel) { i = +sel.dataset.ti || 0; j = +sel.dataset.tj || 0; }
-    map[pos.x][pos.y][0] = (e.which === 3) ? 0 : i;
-    map[pos.x][pos.y][1] = (e.which === 3) ? 0 : j;
-  } else {
-    // vehicles
-    if (e.which === 3) {
-      // hapus kendaraan di sel
-      const idx = vehiclesGrid[pos.x][pos.y];
-      if (idx != null) {
-        vehicles.splice(idx, 1);
-        rebuildVehiclesGrid();
-      }
+    map[pos.x][pos.y][0] = isErase ? 0 : tool[0];
+    map[pos.x][pos.y][1] = isErase ? 0 : tool[1];
+    isPlacing = true;
+    drawMap();
+  } else if (mode === "vehicles") {
+    if (isErase) {
+      vehMap[pos.x][pos.y] = null;
+      drawMap();
     } else if (currentVehicleItem) {
-      // opsional: batasi hanya di jalan
+      // optional restriction: hanya boleh di atas tile jalan
       if (ALLOW_ONLY_ON_ROAD) {
-        const t = map[pos.x][pos.y][0] * texWidth + map[pos.x][pos.y][1];
-        if (!ROAD_TILES.has(t)) return; // bukan jalan → stop
+        const t = map[pos.x][pos.y];
+        const flatIndex = t[0]*texWidth + t[1];
+        if (!ROAD_TILES.has(flatIndex)) {
+          // bukan jalan → batal
+          return;
+        }
       }
-      // satu sel satu mobil
-      if (vehiclesGrid[pos.x][pos.y] == null) {
-        vehicles.push({ x: pos.x, y: pos.y, item: currentVehicleItem });
-        vehiclesGrid[pos.x][pos.y] = vehicles.length - 1;
-      }
+      // tak boleh tumpang tindih
+      if (vehMap[pos.x][pos.y]) return;
+      vehMap[pos.x][pos.y] = {
+        palette: currentVehiclePalette?.id || "unknown",
+        item: currentVehicleItem
+      };
+      drawMap();
     }
   }
 
-  isPlacing = true;
-  drawMap();
-  cf.clearRect(-w*2, -h*2, w*4, h*4);
-  updateHashState(); // tiles only
+  updateHashState();
 }
 
 function unclick(){ if (isPlacing) isPlacing = false; }
 
-/* =========================
-   Render
-   ========================= */
+function viz(e) {
+  if (isPlacing && mode === "tiles") click(e); // drag to paint (tiles only)
+  const pos = getPosition(e);
+  cf.clearRect(-w*2, -h*2, w*4, h*4);
+  applyView();
+  if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
+    drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.18)');
+  }
+}
+
+/* ========= rendering ========= */
 function drawMap() {
   bg.clearRect(-w*2, -h*2, w*4, h*4);
   applyView();
 
-  // ------- Painter's algorithm per sel -------
-  // Gambar tiles dari i=0.., j=0..; setelah tile (i,j), gambar kendaraan di sel (i,j)
+  // layer 1: tiles
   for (let i = 0; i < ntiles; i++) {
     for (let j = 0; j < ntiles; j++) {
       drawImageTile(bg, i, j, map[i][j][0], map[i][j][1]);
-      // kendaraan yang persis di sel ini
-      const idx = vehiclesGrid[i][j];
-      if (idx != null) {
-        const v = vehicles[idx];
-        drawVehicle(bg, v.x, v.y, v.item);
-      }
+    }
+  }
+
+  // layer 2: vehicles (di atas tiles)
+  for (let i = 0; i < ntiles; i++) {
+    for (let j = 0; j < ntiles; j++) {
+      const v = vehMap[i][j];
+      if (v) drawVehicle(bg, i, j, v.item);
     }
   }
 }
@@ -354,25 +373,27 @@ function drawTile(c, x, y, color) {
 function drawImageTile(c, x, y, i, j) {
   c.save();
   c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2);
-  j *= 130; // kolom
-  i *= 230; // baris
+  j *= 130;  // offset X di spritesheet
+  i *= 230;  // offset Y di spritesheet
   c.drawImage(texture, j, i, 130, 230, -65, -130, 130, 230);
   c.restore();
 }
 
+// >>> anchor fix mobil (agar tak "terbang")
 function drawVehicle(c, x, y, item) {
   if (!item || !item.img) return;
   c.save();
   c.translate((y - x) * tileWidth / 2, (x + y) * tileHeight / 2);
-  const dx = (item.anchor?.dx ?? -48);
-  const dy = (item.anchor?.dy ?? -52);
-  c.drawImage(item.img, dx, dy);
+
+  // fallback anchor yang lebih rendah (umumnya pas untuk set Kenney)
+  const ax = (item.anchor?.dx ?? -50) + (VEHICLE_GLOBAL_OFFSET.dx || 0);
+  const ay = (item.anchor?.dy ?? -44) + (VEHICLE_GLOBAL_OFFSET.dy || 0);
+
+  c.drawImage(item.img, ax, ay);
   c.restore();
 }
 
-/* =========================
-   Posisi Kursor + Hover
-   ========================= */
+/* ========= math: tile picking dgn zoom ========= */
 function getPosition(e) {
   const rect = fg.getBoundingClientRect();
   const px = (e.clientX - rect.left) / view.scale;
@@ -386,36 +407,15 @@ function getPosition(e) {
   return { x, y };
 }
 
-function viz(e) {
-  if (isPlacing) click(e);
-  const pos = getPosition(e);
-  cf.clearRect(-w*2, -h*2, w*4, h*4);
-  applyView();
-  if (pos.x >= 0 && pos.x < ntiles && pos.y >= 0 && pos.y < ntiles) {
-    drawTile(cf, pos.x, pos.y, 'rgba(0,0,0,0.2)');
-  }
-}
-
-/* =========================
-   Clear & Utilities
-   ========================= */
+/* ========= clear ========= */
 function clearAll() {
   for (let i = 0; i < ntiles; i++) {
     for (let j = 0; j < ntiles; j++) {
       map[i][j] = [0,0];
-      vehiclesGrid[i][j] = null;
+      vehMap[i][j] = null;
     }
   }
-  vehicles.length = 0;
   cf.clearRect(-w*2, -h*2, w*4, h*4);
   drawMap();
   updateHashState();
-}
-
-function rebuildVehiclesGrid() {
-  vehiclesGrid = Array.from({ length: ntiles }, () => Array(ntiles).fill(null));
-  for (let idx = 0; idx < vehicles.length; idx++) {
-    const v = vehicles[idx];
-    vehiclesGrid[v.x][v.y] = idx;
-  }
 }
